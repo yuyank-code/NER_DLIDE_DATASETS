@@ -10,7 +10,8 @@ ROOT=Path(__file__).resolve().parents[1]
 RAW=ROOT/"data/raw"; MANIFEST=ROOT/"manifests/acquisition_manifest.jsonl"
 RAW.mkdir(parents=True,exist_ok=True); MANIFEST.parent.mkdir(parents=True,exist_ok=True)
 AOI=dict(min_lat=21.0,max_lat=30.0,min_lon=88.0,max_lon=98.5)
-HEADERS={"User-Agent":"NER-SLIDE-V6-data-pipeline/1.1"}
+HEADERS={"User-Agent":"NER-SLIDE-V6-data-pipeline/1.2"}
+COOLR_BASE="https://gis.earthdata.nasa.gov/gis05/rest/services/Landslides"
 
 def sha256(path:Path)->str:
     h=hashlib.sha256()
@@ -39,7 +40,7 @@ def download(url:str,out:Path,source:str,timeout=1800)->bool:
         record(source,"failed",None,url,error=repr(e)); print(f"FAILED {source}: {e}",file=sys.stderr); return False
 
 def coolr(layer:str,source:str,filename:str)->bool:
-    base=f"https://maps.gpm.nasa.gov/landslides/arcgis/rest/services/Landslides/{layer}/FeatureServer/0/query"
+    base=f"{COOLR_BASE}/{layer}/FeatureServer/0/query"
     out=RAW/"landslides"/filename; out.parent.mkdir(parents=True,exist_ok=True)
     features=[]; offset=0; page=2000
     while True:
@@ -47,13 +48,14 @@ def coolr(layer:str,source:str,filename:str)->bool:
                 "geometry":f"{AOI['min_lon']},{AOI['min_lat']},{AOI['max_lon']},{AOI['max_lat']}","geometryType":"esriGeometryEnvelope","inSR":"4326","spatialRel":"esriSpatialRelIntersects","outSR":"4326"}
         try:
             r=requests.get(base,params=params,headers=HEADERS,timeout=120); r.raise_for_status(); obj=r.json()
+            if "error" in obj: raise RuntimeError(obj["error"])
             batch=obj.get("features",[]); features.extend(batch)
             if len(batch)<page:break
             offset+=len(batch); time.sleep(.2)
         except Exception as e:
             record(source,"failed",None,r.url if 'r' in locals() else base,error=repr(e),records=len(features)); return False
     out.write_text(json.dumps({"type":"FeatureCollection","features":features},ensure_ascii=False),encoding="utf-8")
-    record(source,"downloaded",out,base,records=len(features),spatial_filter=AOI); return True
+    record(source,"downloaded",out,base,records=len(features),spatial_filter=AOI,service="NASA Earthdata COOLR"); return True
 
 def usgs()->bool:
     url="https://earthquake.usgs.gov/fdsnws/event/1/query"
@@ -66,12 +68,10 @@ def usgs()->bool:
 
 def worldcover()->int:
     """Download the 3x3-degree 2021 v200 tiles intersecting the NER AOI."""
-    base="https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/"
-    n=0
+    base="https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/"; n=0
     for lat in (21,24,27):
         for lon in (87,90,93,96):
-            tile=f"N{lat:02d}E{lon:03d}"
-            url=base+f"ESA_WorldCover_10m_2021_v200_{tile}_Map.tif"
+            tile=f"N{lat:02d}E{lon:03d}"; url=base+f"ESA_WorldCover_10m_2021_v200_{tile}_Map.tif"
             if download(url,RAW/"landcover"/(tile+"_Map.tif"),"worldcover_2021"): n+=1
     return n
 
