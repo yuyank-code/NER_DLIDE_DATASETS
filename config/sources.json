@@ -1,21 +1,21 @@
 {
   "aoi": {"min_lat": 21.0, "max_lat": 30.0, "min_lon": 88.0, "max_lon": 98.5, "states": ["Arunachal Pradesh", "Assam", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Sikkim", "Tripura"]},
   "sources": {
-    "nasa_coolr_events": {"type":"feature_server","url":"https://maps.gpm.nasa.gov/landslides/arcgis/rest/services/Landslides/COOLR_Events_Points/FeatureServer/0/query","public":true,"notes":"Paginated event inventory; queried by NER bounding box."},
-    "nasa_coolr_reports": {"type":"feature_server","url":"https://maps.gpm.nasa.gov/landslides/arcgis/rest/services/Landslides/COOLR_Reports/FeatureServer/0/query","public":true,"notes":"Report-level observations; endpoint availability is verified at run time."},
+    "nasa_coolr_events": {"type":"feature_server","url":"https://gis.earthdata.nasa.gov/gis05/rest/services/Landslides/COOLR_Events_Points/FeatureServer/0/query","public":true,"notes":"Current NASA Earthdata COOLR event service; paginated and spatially filtered to NER."},
+    "nasa_coolr_reports": {"type":"feature_server","url":"https://gis.earthdata.nasa.gov/gis05/rest/services/Landslides/COOLR_Reports/FeatureServer/0/query","public":true,"notes":"Current NASA Earthdata COOLR report-level observations; availability checked at run time."},
     "usgs_earthquakes": {"type":"api","url":"https://earthquake.usgs.gov/fdsnws/event/1/query","public":true,"notes":"GeoJSON earthquake catalog; 2000-present, configurable magnitude."},
     "osm_ne_india": {"type":"download","url":"https://download.geofabrik.de/asia/india/north-eastern-zone-latest.osm.pbf","public":true,"notes":"Current North-Eastern India OSM extract."},
     "worldcover_2021": {"type":"cog_tiles","base_url":"https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/","public":true,"notes":"10 m land-cover COG tiles; tile discovery/download is generated from AOI."},
     "soilgrids_2": {"type":"webdav","base_url":"https://files.isric.org/soilgrids/latest/data/","public":true,"notes":"Global 250 m soil property maps and uncertainty; selected properties are configured separately."},
-    "hydrobasins_asia": {"type":"download","url":"https://data.hydrosheds.org/file/HydroBASINS/standard/hybas_as_lev01-12_v1c.zip","public":true,"notes":"HydroBASINS Asia levels 1-12."},
-    "hydrorivers_asia": {"type":"download","url":"https://data.hydrosheds.org/file/HydroRIVERS/standard/HydroRIVERS_v10_as_shp.zip","public":true,"notes":"HydroRIVERS Asia."},
-    "open_meteo_archive": {"type":"api","url":"https://archive-api.open-meteo.com/v1/archive","public":true,"notes":"Historical hourly/daily meteorology. Used for reproducible weather histories where ERA5-Land direct access requires credentials."},
-    "nasa_power": {"type":"api","url":"https://power.larc.nasa.gov/api/temporal/daily/point","public":true,"notes":"Daily meteorology/precipitation API; useful fallback and cross-source rainfall audit."},
+    "hydrobasins_asia": {"type":"download","url":"https://data.hydrosheds.org/file/hydrobasins/standard/hybas_as_lev01-12_v1c.zip","public":true,"notes":"HydroBASINS Asia levels 1-12."},
+    "hydrorivers_asia": {"type":"download","url":"https://data.hydrosheds.org/file/HydroRIVERS/HydroRIVERS_v10_as_shp.zip","public":true,"notes":"HydroRIVERS Asia."},
+    "open_meteo_archive": {"type":"api","url":"https://archive-api.open-meteo.com/v1/archive","public":true,"notes":"Historical hourly/daily meteorology used for reproducible event-time histories."},
+    "nasa_power": {"type":"api","url":"https://power.larc.nasa.gov/api/temporal/daily/point","public":true,"notes":"Daily meteorology/precipitation API for independent rainfall cross-checks."},
     "gpm_imerg": {"type":"credentialed_archive","url":"https://gpm.nasa.gov/data-access/downloads/gpm","public":true,"notes":"Research/NRT precipitation; Earthdata authentication is required for archive downloads."},
     "era5_land": {"type":"credentialed_archive","url":"https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land","public":true,"notes":"1950-present hourly reanalysis; CDS credentials required for programmatic bulk access."},
-    "copernicus_dem": {"type":"credentialed_archive","url":"https://dataspace.copernicus.eu/data-collections/copernicus-digital-elevation-model","public":true,"notes":"Copernicus DEM distribution; access path depends on entitlement and current product policy."},
+    "copernicus_dem": {"type":"public_aws_plus_portal","url":"https://dataspace.copernicus.eu/data-collections/copernicus-digital-elevation-model","public":true,"notes":"Copernicus DEM policy/access portal; public AWS mirrors are used where permitted and verified."},
     "sentinel_1": {"type":"credentialed_api","url":"https://dataspace.copernicus.eu/","public":true,"notes":"SAR observations; Data Space account/token required for automated catalogue/download."},
     "sentinel_2": {"type":"credentialed_api","url":"https://dataspace.copernicus.eu/","public":true,"notes":"Optical observations; Data Space account/token required for automated catalogue/download."},
-    "isro_bhuvan_landslide": {"type":"portal","url":"https://bhuvan-app1.nrsc.gov.in/disaster/disaster.php","public":true,"notes":"ISRO/NRSC Landslide Atlas and seasonal/event inventories; portal/API availability is checked at run time."}
+    "isro_bhuvan_landslide": {"type":"portal","url":"https://bhuvan-app1.nrsc.gov.in/disaster/disaster.php","public":true,"notes":"ISRO/NRSC Landslide Atlas and seasonal/event inventories; portal/API availability checked at run time."}
   }
 }
