@@ -28,6 +28,8 @@ jobs:
         run: python processing/clean_landslides.py
       - name: Build event rainfall histories
         run: python processing/weather_from_events.py
+      - name: Build leakage-safe event dataset
+        run: python processing/build_event_dataset.py
       - name: Validate acquisition manifest
         run: python validation/validate.py
       - name: Package raw/intermediate data
