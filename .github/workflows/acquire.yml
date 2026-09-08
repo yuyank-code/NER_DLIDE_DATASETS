@@ -1,0 +1,39 @@
+name: NER-SLIDE V6 real-data acquisition
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acquire-public-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Download authoritative public sources
+        run: python acquisition/acquire.py
+      - name: Clean landslide inventories
+        run: python processing/clean_landslides.py
+      - name: Build event rainfall histories
+        run: python processing/weather_from_events.py
+      - name: Validate acquisition manifest
+        run: python validation/validate.py
+      - name: Package raw/intermediate data
+        run: |
+          tar -czf ner-slide-v6-data-${GITHUB_SHA}.tar.gz data manifests config
+      - name: Upload dataset artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ner-slide-v6-data-${{ github.sha }}
+          path: ner-slide-v6-data-${{ github.sha }}.tar.gz
+          retention-days: 14
