@@ -1,0 +1,19 @@
+# Never commit raw research datasets or generated artifacts
+data/raw/
+data/interim/
+data/processed/
+*.pbf
+*.zip
+*.tif
+*.tiff
+*.nc
+*.h5
+*.hdf5
+*.grib
+*.grib2
+*.parquet
+*.tar.gz
+*.part
+__pycache__/
+*.pyc
+.env
