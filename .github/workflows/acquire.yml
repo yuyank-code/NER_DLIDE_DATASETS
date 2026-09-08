@@ -37,6 +37,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ner-slide-v6-data-${{ github.sha }}
-          path: ner-slide-v6-v6-data-${{ github.sha }}.tar.gz
+          path: ner-slide-v6-data-${{ github.sha }}.tar.gz
           if-no-files-found: error
           retention-days: 14
