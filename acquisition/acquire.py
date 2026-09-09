@@ -1,4 +1,8 @@
-"""Download public NER-SLIDE V6 source data with provenance manifests."""
+"""Download public NER-SLIDE V6 source data with provenance manifests.
+
+Uses public/authorized endpoints only. Multiple official representations are
+tried before an inventory source is declared unavailable.
+"""
 from __future__ import annotations
 import hashlib, json, sys, time
 from datetime import datetime, timezone
@@ -10,8 +14,20 @@ ROOT=Path(__file__).resolve().parents[1]
 RAW=ROOT/"data/raw"; MANIFEST=ROOT/"manifests/acquisition_manifest.jsonl"
 RAW.mkdir(parents=True,exist_ok=True); MANIFEST.parent.mkdir(parents=True,exist_ok=True)
 AOI=dict(min_lat=21.0,max_lat=30.0,min_lon=88.0,max_lon=98.5)
-HEADERS={"User-Agent":"NER-SLIDE-V6-data-pipeline/1.3","Accept":"application/json"}
-COOLR_BASE="https://gis.earthdata.nasa.gov/gis05/rest/services/Landslides"
+HEADERS={"User-Agent":"NER-SLIDE-V6-data-pipeline/1.4","Accept":"application/json,application/geo+json,text/csv,*/*"}
+COOLR_ENDPOINTS={
+    "events":[
+        "https://gis.earthdata.nasa.gov/gis05/rest/services/Landslides/COOLR_Events_Points/FeatureServer/0/query",
+        "https://maps.nccs.nasa.gov/mapping/rest/services/COOLR/COOLR_Events_Point/FeatureServer/0/query",
+    ],
+    "reports":[
+        "https://gis.earthdata.nasa.gov/gis05/rest/services/Landslides/COOLR_Reports_Points/FeatureServer/0/query",
+        "https://maps.nccs.nasa.gov/mapping/rest/services/COOLR/COOLR_Reports_Point/FeatureServer/0/query",
+    ],
+}
+# NASA's public static GLC export is older, but is a legitimate fallback when
+# the live COOLR service is unavailable. NASA metadata dates it through 2016-03-07.
+GLC_EXPORT="https://data.nasa.gov/docs/legacy/Global_Landslide_Catalog_Export/Global_Landslide_Catalog_Export_rows.csv"
 
 
 def sha256(path:Path)->str:
@@ -20,21 +36,17 @@ def sha256(path:Path)->str:
         for b in iter(lambda:f.read(1024*1024),b""): h.update(b)
     return h.hexdigest()
 
-
 def record(source:str,status:str,path:Path|None,url:str,**extra:Any)->None:
     row={"source":source,"status":status,"url":url,"retrieval_timestamp_utc":datetime.now(timezone.utc).isoformat(),"aoi":AOI,**extra}
     if path and path.exists(): row.update({"path":str(path.relative_to(ROOT)),"bytes":path.stat().st_size,"sha256":sha256(path)})
     with MANIFEST.open("a",encoding="utf-8") as f:f.write(json.dumps(row,sort_keys=True)+"\n")
 
-
 def download(url:str,out:Path,source:str,timeout=1800,extra_headers:dict[str,str]|None=None)->bool:
     out.parent.mkdir(parents=True,exist_ok=True)
-    if out.exists() and out.stat().st_size>0:
-        record(source,"already_present",out,url); return True
+    if out.exists() and out.stat().st_size>0: record(source,"already_present",out,url); return True
     tmp=out.with_suffix(out.suffix+".part")
-    headers={**HEADERS,**(extra_headers or {})}
     try:
-        with requests.get(url,headers=headers,stream=True,timeout=(30,timeout),allow_redirects=True) as r:
+        with requests.get(url,headers={**HEADERS,**(extra_headers or {})},stream=True,timeout=(30,timeout),allow_redirects=True) as r:
             r.raise_for_status()
             with tmp.open("wb") as f:
                 for chunk in r.iter_content(1024*1024):
@@ -45,30 +57,37 @@ def download(url:str,out:Path,source:str,timeout=1800,extra_headers:dict[str,str
         if tmp.exists():tmp.unlink()
         record(source,"failed",None,url,error=repr(e)); print(f"FAILED {source}: {e}",file=sys.stderr); return False
 
-
-def coolr(layer:str,source:str,filename:str)->bool:
-    base=f"{COOLR_BASE}/{layer}/FeatureServer/0/query"
+def coolr(kind:str,source:str,filename:str)->bool:
     out=RAW/"landslides"/filename; out.parent.mkdir(parents=True,exist_ok=True)
-    features=[]; offset=0; page=2000
-    while True:
-        params={"where":"1=1","outFields":"*","returnGeometry":"true","f":"geojson","resultRecordCount":page,"resultOffset":offset,
-                "geometry":f"{AOI['min_lon']},{AOI['min_lat']},{AOI['max_lon']},{AOI['max_lat']}","geometryType":"esriGeometryEnvelope","inSR":"4326","spatialRel":"esriSpatialRelIntersects","outSR":"4326"}
-        try:
-            r=requests.get(base,params=params,headers=HEADERS,timeout=120); r.raise_for_status(); obj=r.json()
-            if "error" in obj: raise RuntimeError(obj["error"])
-            if obj.get("type") not in ("FeatureCollection",None) and "features" not in obj: raise RuntimeError(f"unexpected response keys: {list(obj)[:10]}")
-            batch=obj.get("features",[]); features.extend(batch)
-            if len(batch)<page:break
-            offset+=len(batch); time.sleep(.2)
-        except Exception as e:
-            record(source,"failed",None,r.url if 'r' in locals() else base,error=repr(e),records=len(features)); return False
-    if not features:
-        record(source,"empty",None,base,records=0,spatial_filter=AOI,service="NASA Earthdata COOLR")
-        print(f"WARNING {source}: zero features returned for NER AOI",file=sys.stderr)
-        return False
-    out.write_text(json.dumps({"type":"FeatureCollection","features":features},ensure_ascii=False),encoding="utf-8")
-    record(source,"downloaded",out,base,records=len(features),spatial_filter=AOI,service="NASA Earthdata COOLR"); return True
+    last_error=None
+    for endpoint in COOLR_ENDPOINTS[kind]:
+        features=[]; offset=0; page=2000
+        while True:
+            params={"where":"1=1","outFields":"*","returnGeometry":"true","f":"geojson","resultRecordCount":page,"resultOffset":offset,
+                    "geometry":f"{AOI['min_lon']},{AOI['min_lat']},{AOI['max_lon']},{AOI['max_lat']}","geometryType":"esriGeometryEnvelope","inSR":"4326","spatialRel":"esriSpatialRelIntersects","outSR":"4326"}
+            try:
+                r=requests.get(endpoint,params=params,headers=HEADERS,timeout=120); r.raise_for_status(); obj=r.json()
+                if "error" in obj: raise RuntimeError(obj["error"])
+                batch=obj.get("features",[]); features.extend(batch)
+                if len(batch)<page: break
+                offset+=len(batch); time.sleep(.2)
+            except Exception as e:
+                last_error=repr(e); break
+        if features:
+            out.write_text(json.dumps({"type":"FeatureCollection","features":features},ensure_ascii=False),encoding="utf-8")
+            record(source,"downloaded",out,endpoint,records=len(features),spatial_filter=AOI,service="NASA COOLR",endpoint_used=endpoint)
+            print(f"COOLR {kind}: {len(features)} features via {endpoint}")
+            return True
+        print(f"COOLR {kind} endpoint yielded no usable features: {endpoint}; error={last_error}",file=sys.stderr)
+    record(source,"failed",None,COOLR_ENDPOINTS[kind],records=0,error=last_error or "all endpoints returned zero features")
+    return False
 
+def glc_export()->bool:
+    out=RAW/"landslides"/"global_landslide_catalog_export_2016.csv"
+    if download(GLC_EXPORT,out,"nasa_global_landslide_catalog_export",1800):
+        record("nasa_global_landslide_catalog_export","verified_static_fallback",out,GLC_EXPORT,coverage="global; through 2016-03-07")
+        return True
+    return False
 
 def usgs()->bool:
     url="https://earthquake.usgs.gov/fdsnws/event/1/query"
@@ -79,9 +98,7 @@ def usgs()->bool:
         record("usgs_earthquakes","downloaded",out,r.url,query=params,records=len(r.json().get("features",[]))); return True
     except Exception as e:record("usgs_earthquakes","failed",None,url,error=repr(e)); return False
 
-
 def worldcover()->int:
-    """Download the 3x3-degree 2021 v200 tiles intersecting the NER AOI."""
     base="https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/"; n=0
     for lat in (21,24,27):
         for lon in (87,90,93,96):
@@ -89,20 +106,16 @@ def worldcover()->int:
             if download(url,RAW/"landcover"/(tile+"_Map.tif"),"worldcover_2021"): n+=1
     return n
 
-
 def hydro_downloads()->None:
-    """Try official HydroSHEDS downloads without allowing an access-denied optional layer to block the event pipeline."""
     referer={"Referer":"https://www.hydrosheds.org/","Accept":"application/zip,application/octet-stream,*/*"}
     download("https://data.hydrosheds.org/file/hydrobasins/standard/hybas_as_lev01-12_v1c.zip",RAW/"hydrology"/"hydrobasins_as_lev01-12_v1c.zip","hydrobasins_asia",3600,referer)
     download("https://data.hydrosheds.org/file/HydroRIVERS/HydroRIVERS_v10_as_shp.zip",RAW/"hydrology"/"hydrorivers_asia.zip","hydrorivers_asia",3600,referer)
 
-
 def main()->int:
     print("Acquiring real public NER-SLIDE V6 datasets")
-    # NASA's current service exposes reports as COOLR_Reports_Points; the previous
-    # COOLR_Reports path was invalid and caused the entire event chain to stall.
-    coolr("COOLR_Events_Points","nasa_coolr_events","coolr_events.geojson")
-    coolr("COOLR_Reports_Points","nasa_coolr_reports","coolr_reports.geojson")
+    events_ok=coolr("events","nasa_coolr_events","coolr_events.geojson")
+    coolr("reports","nasa_coolr_reports","coolr_reports.geojson")
+    if not events_ok: glc_export()
     usgs()
     download("https://download.geofabrik.de/asia/india/north-eastern-zone-latest.osm.pbf",RAW/"infrastructure"/"north-eastern-zone-latest.osm.pbf","osm_ne_india",3600)
     hydro_downloads()
